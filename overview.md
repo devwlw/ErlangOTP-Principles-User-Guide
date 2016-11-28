@@ -143,16 +143,26 @@ free(Ch, {Alloc, Free} = Channels) ->
 不使用行为写出来的代码更有效率，但是却牺牲了通用性。能一致性的管理系统中的应用是很重要的。使用行为同样也能让其他的开发者更容易阅读与理解代码，简易的编程结构虽然更高效但是却难于理解。
 　　
 标准的Erlang/OTP行为有:
-1. **gen_server**
-　　　　实现client-server关系的服务器
-2. **gen_fsm**
-　　　　实现有限状态机（Old）
-3. **gen_statem**
-　　　　实现状态机（New）
-4. **gen_event**
-　　　　实现事件处理功能
-5. **supervisor**
-　　　　在监督树中实现一个**supervisor**
+
+* **gen_server**
+
+实现client-server关系的服务器
+
+* **gen_fsm**
+
+实现有限状态机（Old）
+
+* **gen_statem**
+
+实现状态机（New）
+
+* **gen_event**
+
+实现事件处理功能
+
+* **supervisor**
+
+在监督树中实现一个**supervisor**
 
 编译器能识别模块属性<b>-behaviour(Behaviour)</b>，当缺少回调函数时会发出警告，比如：
 

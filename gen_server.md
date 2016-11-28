@@ -49,7 +49,7 @@ start_link() ->
     gen_server:start_link({local, ch3}, ch3, [], []) => {ok, Pid}
 ```
 
-**start_link**调用了函数**gen_server:start_link/4**,此函数分裂(spawns)并且连接到一个新的gen_server进程
+**start_link**调用了函数**gen_server:start_link/4**,此函数分裂(spawns)并且链接到一个新的gen_server进程
 
 - 第一个参数{local, ch3}用于指定名称。调用完成后gen_server在本地被注册为ch3。
 若名称被省略,那么gen_server不会被注册,而必须使用其pid。name参数同样也可以为{global, Name},在这种情况下,gen_server使用global:register_name/2注册。
@@ -65,4 +65,113 @@ init(_Args) ->
 ```
 
 **gen_server:start_link**是同步的,当**gen_server**没有初始化和准备好接收数据时,它是不会返回的。
-如果**gen_server**是监督树的一部分,那么必须使用**gen_server:start_link**,也就是说一个**gen_server**不是监督树的一部分。
+如果**gen_server**是监督树的一部分,即由一个supervisor启动,那么必须使用**gen_server:start_link**。另外有一个**gen_server:start**函数,可以启动一个独立的服务器,也就是说一个**gen_server**不是监督树的一部分。
+
+### 2.4 同步请求 - Call
+
+同步请求**alloc()**由**gen_server:call/2**实现:
+```
+alloc() ->
+    gen_server:call(ch3, alloc).
+```
+
+ch3是gen_server的名称并且必须与用于启动它的名称一致,alloc是实际的请求。
+
+该请求被转换成一条消息并且发送到gen_server。当请求到达时,**gen_server**调用**handle_call(Request, Form State)**,返回一个元祖**{reply, Reply, State1}**。**Reply**是发送到客户端的应答并且**State1**是**gen_server**的一个新的状态值.
+
+```
+handle_call(alloc, _From, Chs) ->
+    {Ch, Chs2} = alloc(Chs),
+    {reply, Ch, Chs2}.
+```
+
+在这个例子中,**Ch**是分配好的频道,新的状态值**Chs2**是剩余可用频道的集合。
+
+因此,**ch3:alloc()**返回已经分配好的频道**Ch**,**gen_server继续等待**新的请求并且有可用频道的更新列表。
+
+###异步请求 - Cast
+
+异步请求**free(Ch)**由**gen_Server:cast/2**实现:
+```
+free(Ch) ->
+    gen_server:cast(ch3, {free, Ch}).
+```
+
+ch3是**gen_server**的名称,{free, Ch}是实际的请求。 
+
+该请求被转换成一条消息并且发送到**gen_server**。**cast**, and thus **free**, then returns **ok**.
+
+当请求到达时,**gen_server**调用**handle_cast(Request, State)**,返回一个元祖**{noreply, State1}**,**State1**是**gen_server**的一个新的状态值.
+```
+handle_cast({free, Ch}, Chs) ->
+    Chs2 = free(Ch, Chs),
+    {noreply, Chs2}.
+```
+
+在这个例子中,新状态是可用频道**Chs2**的更新列表,**gen_server**已准备好接收新的请求。
+
+### 2.6 停止
+
+#### 在监督树中
+
+如果**gen_server**是监督树的一部分,那么并不需要停止函数。**gen_server**会被它的supervisor自动终止。supervisor中设置的[关闭策略(shutdown strategy)](supervisor.md)定义了该怎么做。
+
+如果在终止前需要执行清理,关闭策略必须为一个超时值,**gen_server**必须设置成在**init**函数中捕获退出信号。当执行关闭时,**gen_server**会调用回调函数**terminate(shutdown, State)**:
+
+```
+init(Args) ->
+    ...,
+    process_flag(trap_exit, true),
+    ...,
+    {ok, State}.
+
+...
+
+terminate(shutdown, State) ->
+    ..code for cleaning up here..
+    ok.
+```
+
+#### 独立的Gen_Servers
+
+如果**gen_server**不是监督树的一部分,那么停止函数将会很有用,例如:
+
+```
+...
+export([stop/0]).
+...
+
+stop() ->
+    gen_server:cast(ch3, stop).
+...
+
+handle_cast(stop, State) ->
+    {stop, normal, State};
+handle_cast({free, Ch}, State) ->
+    ....
+
+...
+
+terminate(normal, State) ->
+    ok.
+```
+
+处理**stop**请求的回调函数返回一个元祖**{stop,normal,State1}**,其中**normal**表示它是正常终止的,**State1**是**gen_server**的新状态。这使得**gen_server**调用**terminate(normal, State1)**过后它会正常终止。
+
+### 2.7 处理其他消息
+
+如果**gen_server**能够接收除请求之外的其他消息,回调函数**handle_info(Info, State)**必须实现来处理它们。例如退出消息,如果**gen_server**被链接到其他进程并且捕获退出信号。
+
+```
+handle_info({'EXIT', Pid, Reason}, State) ->
+    ..code to handle exits here..
+    {noreply, State1}.
+```
+
+**code_change**方法也必须实现。
+
+```
+code_change(OldVsn, State, Extra) ->
+    ..code to convert state (and more) during code change
+    {ok, NewState}.
+```
