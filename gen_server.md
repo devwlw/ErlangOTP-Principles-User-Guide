@@ -51,7 +51,7 @@ start_link() ->
 
 **start_link**调用了函数**gen_server:start_link/4**,此函数分裂(spawns)并且链接到一个新的gen_server进程
 
-- 第一个参数{local, ch3}用于指定名称。调用完成后gen_server在本地被注册为ch3。
+- 第一个参数{local, ch3}用于指定名称。调用完成后gen_server在局部被注册为ch3。
 若名称被省略,那么gen_server不会被注册,而必须使用其pid。name参数同样也可以为{global, Name},在这种情况下,gen_server使用global:register_name/2注册。
 - 第二个参数ch3为回调模块的名字,也就是回调函数所在的模块。 
 接口函数(start_link,alloc,free)位于与回调函数(init,handle_call)相同的模块中。这通常是一种好的编程实践,具有对应于包含在一个模块中的一个进程的代码。
@@ -64,7 +64,7 @@ init(_Args) ->
     {ok, channels()}.
 ```
 
-**gen_server:start_link**是同步的,当**gen_server**没有初始化和准备好接收数据时,它是不会返回的。
+**gen_server:start_link**是同步的,当**gen_server**没有初始化和准备好接收请求时,它是不会返回的。
 如果**gen_server**是监督树的一部分,即由一个supervisor启动,那么必须使用**gen_server:start_link**。另外有一个**gen_server:start**函数,可以启动一个独立的服务器,也就是说一个**gen_server**不是监督树的一部分。
 
 ### 2.4 同步请求 - Call
@@ -77,7 +77,7 @@ alloc() ->
 
 ch3是gen_server的名称并且必须与用于启动它的名称一致,alloc是实际的请求。
 
-该请求被转换成一条消息并且发送到gen_server。当请求到达时,**gen_server**调用**handle_call(Request, Form State)**,返回一个元祖**{reply, Reply, State1}**。**Reply**是发送到客户端的应答并且**State1**是**gen_server**的一个新的状态值.
+该请求被转换成一条消息并且发送到**gen_server**。当请求到达时,**gen_server**调用**handle_call(Request, Form State)**,返回一个元祖**{reply, Reply, State1}**。**Reply**是发送到客户端的应答并且**State1**是**gen_server**的一个新的状态值.
 
 ```
 handle_call(alloc, _From, Chs) ->
