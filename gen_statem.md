@@ -2,7 +2,7 @@
 
 本章应该与STDLIB手册中的[gen_statem](http://erlang.org/doc/man/gen_statem.html)一节一起阅读,包含了所有的接口函数与回调函数的定义。
 
-#### 4.1 事件驱动的状态机
+<h3 id="1"> 4.1 事件驱动的状态机</h3>
 
 已建立的自动机理论不太关心状态转换时如何触发的，但是假设输出是输入（和状态）函数并且它们是某种值。
 对于一个事件驱动的状态机，输入事件触发一个状态转换并且输出是在状态转换期间执行的动作。与有限状态机的数学模型近似，可以描述为一组关系集合，就像下面这种形式：
@@ -14,7 +14,7 @@ State(S) x Event(E) -> Actions(A), State(S')
 
 当**A**和**S'**只依赖于**S**和**E**时，这种类型的状态机我们叫做[Mealy Machine](https://en.wikipedia.org/wiki/Mealy_machine)。
 
-就像大部分的**gen_**行为，**gen_statem**保存除服务器状态之外的数据。正因为这样，对状态（假设有足够的虚拟内存）或不同输入的数量没有限制，由此行为实现的状态机实际上是[图灵完备](http://stackoverflow.com/questions/7284/what-is-turing-complete)。但是感觉更像是事件驱动的Mealy机。
+就像大部分的**gen_**行为，**gen_statem**保存除服务器状态之外的数据。正因为这样，对状态（假设有足够的虚拟机内存）或不同输入的数量没有限制，由此行为实现的状态机实际上是[图灵完备](http://stackoverflow.com/questions/7284/what-is-turing-complete)。但是感觉更像是事件驱动的Mealy机。
 
 #### 4.2 回调模式
 
@@ -43,15 +43,58 @@ Both these modes allow other return tuples; see [Module:StateName/3](http://erla
 
 使用**state_functions**时，只能使用原子（atom-only）状态，**gen_statem**引擎分支取决于你使用的状态名。这鼓励回调模块收集所有事件动作的实现，特别是代码中相同位置中的一种状态，因此专注于当时的一种状态。
 
-当你忧郁哥常规状态图时，这个模式很适合。像本章中提到的那些一样，描述属于状态的所有事件和动作，并且每个状态都有唯一的名称。
+当你有一个常规状态图时，这个模式很适合。像本章中提到的那些一样，描述属于状态的所有事件和动作，并且每个状态都有唯一的名称。
 
 使用**handle_event_function**时，可以随意使用混合策略，所有的时间和状态都在一个相同的回调函数里处理。
 
 当你想关注当时的一种事件或者状态时，这种模式同样能很好的工作，但[Module:handle_event/4](http://erlang.org/doc/man/gen_statem.html#Module:handle_event-4)会快速增长而无法分支到辅助函数。 
 
-这种模式允许使用非原子的状态，例如复杂或者分层状态。对于协议两端的客户端和服务端的状态图有很大程度上的相似，你可以使用 **{StateName,server}**或者**{StateName,client}**状态中的**StateName**来决定在该代码里哪处处理该状态的大部分事件。元组中的第二个参数用来选择是否处理特殊的客户端或服务端事件。 
+这种模式允许使用非原子的状态，例如复杂或者分层状态。对于协议两端的客户端和服务端的状态图有很大程度上的相似，你可以使用 **{StateName,server}**或者**{StateName,client}**状态中的**StateName**来决定在该代码里哪处处理该状态的大部分事件。元组中的第二个参数用来选择是否处理特殊的客户端或服务端事件。
 
-### 4.3 例子
+### 4.3  状态输入调用
+
+每当状态改变时，**gen_statem**行为可以不管回调模式而自动调用具有特定参数的[回调函数](http://erlang.org/doc/man/gen_statem.html#type-state_enter)，所以你可以在其余的状态转换规则附近写入状态条目动作。通常是这样：
+
+```
+StateName(enter, _OldState, Data) ->
+    ... code for state entry actions here ...
+    {keep_state, NewData};
+StateName(EventType, EventContent, Data) ->
+    ... code for actions here ...
+    {next_state, NewStateName, NewData}.
+```
+根据所你指定的状态机，这是一个非常有用的功能，但是却会强制你在所有的状态中处理状态输入调用。另见[状态输入操作](#state_in)一章
+
+### 4.4 动作
+
+在第一节[事件驱动状态机](#1)中，动作被提及为一般状态机模型的一部分。在返回给**gen_statem**引擎之前，回调模块**gen_statem**在一个事件处理回调函数中被执行的同时实现了这些一般动作。
+
+在回调函数返回后，有许多特定的状态转换动作来供回调函数来操作**gen_statem**引擎使用。它们为[回调函数](http://erlang.org/doc/man/gen_statem.html#Module:StateName-3)返回的[元组](http://erlang.org/doc/man/gen_statem.html#type-state_callback_result)中的一个[动作](http://erlang.org/doc/man/gen_statem.html#type-action)列表。这些状态转换动作可以影响到**gen_statem**本身并且可以做下面这些事：
+
+* [推迟](http://erlang.org/doc/man/gen_statem.html#type-postpone)当前事件，见[Postponing Events](http://erlang.org/doc/design_principles/statem.html#Postponing%20Events)
+* [休眠](http://erlang.org/doc/man/gen_statem.html#type-hibernate)**gen_statem**，见[Hibernation](#hibernation)
+* 开启[超时状态](http://erlang.org/doc/man/gen_statem.html#type-state_timeout)，见[State Time-Outs](#state_timeout)
+* 启动[超时事件](http://erlang.org/doc/man/gen_statem.html#type-event_timeout)，见[Event Time-Outs](#eevent_timeout)
+* [回复](http://erlang.org/doc/man/gen_statem.html#type-reply_action)调用者，见[All State Events](#all_state_event)
+* 生成要处理的[下一个事件](http://erlang.org/doc/man/gen_statem.html#type-action)，见[Self-Generated Events]($self_gen_event)
+
+详情请查看手册[gen_statem(3)](http://erlang.org/doc/man/gen_statem.html#type-action)一章。举个例子，你可以回复多个调用者并且生成多个next events来处理
+
+### 4.5 事件类型
+
+事件分类成多种不停的[事件类型](http://erlang.org/doc/man/gen_statem.html#type-event_type)。所有类型的事件都在相同的回调函数中处理，对于给定的状态，函数将**EventType**与**EventContent**作为参数。
+下面是一个完整的事件类型列表以及他们的来处：
+
+*cast*  =>  由[gen_statem:cast](http://erlang.org/doc/man/gen_statem.html#cast-2)生成
+*{call,From}*  =>  由[gen_statem:call](http://erlang.org/doc/man/gen_statem.html#call-2)生成，其中**From**是通过状态转换操作**{reply，From，Msg}**或通过调用[gen_statem:reply](http://erlang.org/doc/man/gen_statem.html#reply-1)应答时使用的回复地址。
+*info*  =>  由发送到**gen_statem**进程的任意常规进程消息生成。
+*state_timeout*  =>  由状态转换动作[{state_timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-state_timeout)，状态定时器超时生成。
+*timeout*  =>  由状态转换动作[{timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-event_timeout)(或者**Time**)，事件定时器超时生成。
+*internal*  =>  由状态转换动作**{next_event,internal,EventContent}**生成。
+以上所有事件类型同样可以使用**{next_event,EventType,EventContent}**生成
+
+
+### 4.6 例子
 
 此实例等效于[gen_fsm行为](<gen_fsm.md>)中的例子。后面部分的例子中使用了**gen_statem**中的额外功能**gen_fsm**并没有这些功能，章节末尾提供了一个包含所有额外功能的例子。
 
@@ -119,7 +162,7 @@ code_change(_Vsn, State, Data, _Extra) ->
 ```
 代码的讲解在下一节。
 
-### 4.4  启动gen_statem
+### 4.7  启动gen_statem
 
 在前几节的例子中，**gen_statem**通过调用**code_lock:start_link(Code)**来启动：
 
@@ -161,7 +204,7 @@ callback_mode() ->
 
 [ Module:callback_mode/0](http://erlang.org/doc/man/gen_statem.html#Module:callback_mode-0)函数为回调模块选择[CallbackMode](http://erlang.org/doc/design_principles/statem.html#callback_modes)，在这个例子中是[state_functions](http://erlang.org/doc/man/gen_statem.html#type-callback_mode)。也就是说，每一种状态都有其自己的处理函数。
 
-### 4.5 处理事件
+### 4.8 事件处理
 
 通知密码锁的按钮事件的函数由[gen_statem:cast/2](http://erlang.org/doc/man/gen_statem.html#cast-2)实现：
 ```
@@ -201,9 +244,9 @@ open(cast, {button,_}, Data) ->
 
 在**open**状态，任何按钮都会把门关闭，所有事件都会取消事件计时器，所以在 一个按钮事件过后没有超时事件发生。
 
-### 4.6 Time-Outs事件
+### 4.9 Time-Outs状态
 
-当一个给予了一个正确的密码时门将会被解锁并且**locked/2**将会返回下面的元组：
+当给予一个正确密码时门将会被解锁并且**locked/2**将会返回下面的元组：
 
 ```
 {next_state,open,Data#{remaining := Code},10000};
@@ -217,7 +260,7 @@ open(timeout, _,  Data) ->
     {next_state,locked,Data};
 ```
 
-### 4.7 所有状态事件
+### 4.10 所有状态事件
 
 事件有时会在**gen_statem**的任何状态下到达。在通用状态处理函数中处理这些是非常方便的，事件的所有状态函数调用不特定于状态。 
 
@@ -249,6 +292,42 @@ This example uses gen_statem:call/2, which waits for a reply from the server. Th
 
 这个例子中使用了[gen_statem:call/2](http://erlang.org/doc/man/gen_statem.html#call-2)，等待来自服务器的应答。此应答在**{keep_state,...}**元组的动作列表中与**{reply,From,Reply}**元组一起发送，并且保持当前状态。 
 
-### 4.8 单一事件处理
+### 4.11 单一事件处理
 
 若使用**handle_event_function**,所有的事件都会在[Module:handle_event/4](http://erlang.org/doc/man/gen_statem.html#Module:handle_event-4)中处理,并且当我们首先依据事件分支时我们可以使用
+```
+...
+-export([handle_event/4]).
+
+...
+callback_mode() ->
+    handle_event_function.
+
+handle_event(cast, {button,Digit}, State, #{code := Code} = Data) ->
+    case State of
+	locked ->
+	    case maps:get(remaining, Data) of
+		[Digit] -> % Complete
+		    do_unlock(),
+		    {next_state, open, Data#{remaining := Code},
+                     [{state_timeout,10000,lock}};
+		[Digit|Rest] -> % Incomplete
+		    {keep_state, Data#{remaining := Rest}};
+		[_|_] -> % Wrong
+		    {keep_state, Data#{remaining := Code}}
+	    end;
+	open ->
+            keep_state_and_data
+    end;
+handle_event(state_timeout, lock, open, Data) ->
+    do_lock(),
+    {next_state, locked, Data}.
+
+...
+
+```
+
+### 4.12 停止
+
+#### 在监督树中
+
