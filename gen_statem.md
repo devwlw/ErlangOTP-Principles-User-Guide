@@ -219,9 +219,9 @@ open(timeout, _,  Data) ->
 
 ### 4.7 所有状态事件
 
-事件有时会在**gen_statem**的任何状态下到达。在公共状态处理函数中处理这些是非常方便的，事件的所有状态函数调用不特定于状态。 
+事件有时会在**gen_statem**的任何状态下到达。在通用状态处理函数中处理这些是非常方便的，事件的所有状态函数调用不特定于状态。 
 
-**code_length/0**函数返回正确密码的长度，我们调度所有不是状态特定（state-specific）的事件到公共函数**handle_event/3**:
+**code_length/0**函数返回正确密码的长度，我们调度所有不是状态特定（state-specific）的事件到通用函数**handle_event/3**:
 
 ```
 ...
@@ -251,3 +251,4 @@ This example uses gen_statem:call/2, which waits for a reply from the server. Th
 
 ### 4.8 单一事件处理
 
+若使用**handle_event_function**,所有的事件都会在[Module:handle_event/4](http://erlang.org/doc/man/gen_statem.html#Module:handle_event-4)中处理,并且当我们首先依据事件分支时我们可以使用
