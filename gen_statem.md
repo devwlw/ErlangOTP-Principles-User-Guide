@@ -71,7 +71,7 @@ StateName(EventType, EventContent, Data) ->
 
 在回调函数返回后，有许多特定的状态转换动作来供回调函数来操作**gen_statem**引擎使用。它们为[回调函数](http://erlang.org/doc/man/gen_statem.html#Module:StateName-3)返回的[元组](http://erlang.org/doc/man/gen_statem.html#type-state_callback_result)中的一个[动作](http://erlang.org/doc/man/gen_statem.html#type-action)列表。这些状态转换动作可以影响到**gen_statem**本身并且可以做下面这些事：
 
-* [推迟](http://erlang.org/doc/man/gen_statem.html#type-postpone)当前事件，见[Postponing Events](http://erlang.org/doc/design_principles/statem.html#Postponing%20Events)
+* [延迟](http://erlang.org/doc/man/gen_statem.html#type-postpone)当前事件，见[Postponing Events](http://erlang.org/doc/design_principles/statem.html#Postponing%20Events)
 * [休眠](http://erlang.org/doc/man/gen_statem.html#type-hibernate)**gen_statem**，见[Hibernation](#hibernation)
 * 开启[超时状态](http://erlang.org/doc/man/gen_statem.html#type-state_timeout)，见[State Time-Outs](#state_timeout)
 * 启动[超时事件](http://erlang.org/doc/man/gen_statem.html#type-event_timeout)，见[Event Time-Outs](#eevent_timeout)
@@ -85,12 +85,18 @@ StateName(EventType, EventContent, Data) ->
 事件分类成多种不停的[事件类型](http://erlang.org/doc/man/gen_statem.html#type-event_type)。所有类型的事件都在相同的回调函数中处理，对于给定的状态，函数将**EventType**与**EventContent**作为参数。
 下面是一个完整的事件类型列表以及他们的来处：
 
-*cast*  =>  由[gen_statem:cast](http://erlang.org/doc/man/gen_statem.html#cast-2)生成
-*{call,From}*  =>  由[gen_statem:call](http://erlang.org/doc/man/gen_statem.html#call-2)生成，其中**From**是通过状态转换操作**{reply，From，Msg}**或通过调用[gen_statem:reply](http://erlang.org/doc/man/gen_statem.html#reply-1)应答时使用的回复地址。
-*info*  =>  由发送到**gen_statem**进程的任意常规进程消息生成。
-*state_timeout*  =>  由状态转换动作[{state_timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-state_timeout)，状态定时器超时生成。
-*timeout*  =>  由状态转换动作[{timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-event_timeout)(或者**Time**)，事件定时器超时生成。
-*internal*  =>  由状态转换动作**{next_event,internal,EventContent}**生成。
+*cast* &nbsp; 由[gen_statem:cast](http://erlang.org/doc/man/gen_statem.html#cast-2)生成
+
+*{call,From}*  &nbsp;  由[gen_statem:call](http://erlang.org/doc/man/gen_statem.html#call-2)生成，其中**From**是通过状态转换操作**{reply，From，Msg}**或通过调用[gen_statem:reply](http://erlang.org/doc/man/gen_statem.html#reply-1)应答时使用的回复地址。
+
+*info*  &nbsp;  由发送到**gen_statem**进程的任意常规进程消息生成。
+
+*state_timeout*  &nbsp;  由状态转换动作[{state_timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-state_timeout)，状态定时器超时生成。
+
+*timeout*  =>  &nbsp;  由状态转换动作[{timeout,Time,EventContent}](http://erlang.org/doc/man/gen_statem.html#type-event_timeout)(或者**Time**)，事件定时器超时生成。
+
+*internal*  =>  &nbsp;  由状态转换动作**{next_event,internal,EventContent}**生成。
+
 以上所有事件类型同样可以使用**{next_event,EventType,EventContent}**生成
 
 
@@ -331,3 +337,171 @@ handle_event(state_timeout, lock, open, Data) ->
 
 #### 在监督树中
 
+若**gen_statem**是监督树的一部分，则不需要停止函数。**gen_statem**会自动被其supervisor终止。supervisor中设置的[关闭策略(shutdown strategy)](supervisor.md)定义了该怎么做。
+
+如果在终止前要执行清理任务，那关闭策略必须为一个超时值并且在**init/1**函数中**gen_statem**必须通过调用[process_flag(trap_exit, true)](http://erlang.org/doc/man/erlang.html#process_flag-2)来捕获退出信号：
+
+```
+init(Args) ->
+    process_flag(trap_exit, true),
+    do_lock(),
+    ...
+```
+
+当执行关闭操作时，**gen_statem**会调用回调函数**terminate(shutdown, State, Data)**。
+
+在这个例子中，如果门是开着的那么函数**terminate/3**会将其锁上，所以当监督树终止时，我们不会意外地将门打开：
+
+```
+terminate(_Reason, State, _Data) ->
+    State =/= locked andalso do_lock(),
+    ok.
+```
+
+#### 独立的gen_statem
+
+若**gen_statem**不是监督树的一部分，那么可以使用[gen_statem:stop](http://erlang.org/doc/man/gen_statem.html#stop-1)将其停止，通过API函数：
+
+```
+...
+-export([start_link/1,stop/0]).
+
+...
+stop() ->
+    gen_statem:stop(?NAME).
+```
+
+这使得**gen_statem**调用回调函数**terminate/3**就像一个被监督的服务器（supervised server）一样等待进程终止。
+
+### 4.13 事件超时
+
+超时功能从**gen_statem**的前身[gen_fsm](http://erlang.org/doc/man/gen_fsm.html)继承，为事件超时，也就是说如果事件到达则定时器被取消。能获取到一个事件或者超时，但是不会同时获取到两者。
+
+它由状态转换动作来生成，可能的状态转换动作为**{timeout,Time,EventContent}**或**Time**甚至只是**Time**而不是一个动作列表（后者是**gen_fsm**的一种继承形式）。
+
+这种类型的超时对不活动的动作是很有用的，若在30秒内没有按钮按下在，则重启一个密码序列：
+
+```
+...
+
+locked(
+  timeout, _, 
+  #{code := Code, remaining := Remaining} = Data) ->
+    {next_state, locked, Data#{remaining := Code}};
+locked(
+  cast, {button,Digit},
+  #{code := Code, remaining := Remaining} = Data) ->
+...
+        [Digit|Rest] -> % Incomplete
+            {next_state, locked, Data#{remaining := Rest}, 30000};
+...
+```
+
+每当我们接收到一个按钮事件时，我们启动一个超时为30秒的事件，若我们捕获到一个**timeout**类型事件则重置密码序列。
+
+超时事件能被其他任何的事件取消，所以你可能会得到其他类型的事件或者超时事件。因此，不可能也不需要取消或重启一个超时事件。
+
+### 4.14 Erlang定时器
+
+先前关于超时状态的例子，只起效于超时时间内状态机保持相同状态的情况。并且，超时事件只在没有发生无关干扰的情况下工作。
+
+也许你想在一个状态下启动一个定时器，并在另一个状态下响应超时，也许想不通过改变状态来取消掉超时，再也许你想并行的运行多个超时。这些都可以通过Erlang定时器[erlang:start_timer3,4](http://erlang.org/doc/man/erlang.html#start_timer-4)来完成。
+
+这里会介绍怎样使用Erlang定时器来完成先前例子中的超时状态：
+
+```
+...
+locked(
+  cast, {button,Digit},
+  #{code := Code, remaining := Remaining} = Data) ->
+    case Remaining of
+        [Digit] ->
+	    do_unlock(),
+	    Tref = erlang:start_timer(10000, self(), lock),
+            {next_state, open, Data#{remaining := Code, timer => Tref}};
+...
+
+open(info, {timeout,Tref,lock}, #{timer := Tref} = Data) ->
+    do_lock(),
+    {next_state,locked,maps:remove(timer, Data)};
+open(cast, {button,_}, Data) ->
+    {keep_state,Data};
+...
+```
+
+当我们改变**locked**状态时，从map中移除**timer**键并不是必须的。因为我们只能使用一个较新的**timer**map值来进入状态**open**。
+
+若由于某些其他事件导致你必须取消定时器，你可以使用[erlang:cancel_timer(Tref)](http://erlang.org/doc/man/erlang.html#cancel_timer-2)。注意,超时消息在调用此函数过后是不会被接收到的，除非你在先前延迟了（下一节将会介绍），所以确保不会意外的延迟此类消息。同时也要注意，超时消息可能会在你取消定时器之前到达，所以你可能必须要从进程信箱中读取此类消息，具体取决于[erlang:cancel_timer(Tref)](http://erlang.org/doc/man/erlang.html#cancel_timer-2)的返回值。
+
+另外一个方法来处理迟到超时的方式是不取消它，如果我们知道它是迟到的那么当它到达时我们可以将其丢弃。
+
+### 4.15 延迟（Postponing ）事件
+
+若你想在当前的状态下丢弃一个特定事件并且在将来的某种状态中来处理，可以延迟此事件。状态更改后会重试延迟事件，也就是：**OldState =/= NewState**。
+
+延迟事件由状态转换动作**postpone**生成。
+
+在这个例子中，代替在**open**状态中舍弃按钮事件的方式，我们可以延迟它们，然后它们将排队并且在**locked**状态中处理。
+
+```
+...
+open(cast, {button,_}, Data) ->
+    {keep_state,Data,[postpone]};
+...
+```
+
+由于延迟事件只在状态改变时重试，你必须考虑保存状态数据的位置。你可以将其放在服务器**Data**或者它自己的**State**中，例如通过两个具有或多或少相同的状态来保存布尔值，或者用[callback mode handle_event_function](http://erlang.org/doc/man/gen_statem.html#type-callback_mode)来使用复杂的状态。一个值的变化导致了事件集合的改变，如果处理了这种情况，那么值将会被保存在State中。否则，不会有延迟事件会被重试，除了服务器Data改变。
+
+延迟事件并不是很重要，但是如果你以后决定延迟一些事件，会导致它们出现与预期不同的状态缺陷，这样很难找出bug。
+
+#### 模糊状态图
+
+状态图没有指定如何处理图中未示出的特定状态事件的情况并不罕见。希望这在相关的文本或上下文中有所描述。
+
+Possible actions: ignore as in drop the event (maybe log it) or deal with the event in some other state as in postpone it.
+
+可能的操作：舍弃事件（或许记录它）或者在其他某些事件中处理。
+
+#### 选择性接收
+
+Erlang的选择性接收语句经常用来在简单的Erlang代码中描述简单的状态机实例。下面的代码是第一个例子的一种实现方式：
+
+```
+-module(code_lock).
+-define(NAME, code_lock_1).
+-export([start_link/1,button/1]).
+
+start_link(Code) ->
+    spawn(
+      fun () ->
+	      true = register(?NAME, self()),
+	      do_lock(),
+	      locked(Code, Code)
+      end).
+
+button(Digit) ->
+    ?NAME ! {button,Digit}.
+
+locked(Code, [Digit|Remaining]) ->
+    receive
+	{button,Digit} when Remaining =:= [] ->
+	    do_unlock(),
+	    open(Code);
+	{button,Digit} ->
+	    locked(Code, Remaining);
+	{button,_} ->
+	    locked(Code, Code)
+    end.
+
+open(Code) ->
+    receive
+    after 10000 ->
+	    do_lock(),
+	    locked(Code, Code)
+    end.
+
+do_lock() ->
+    io:format("Locked~n", []).
+do_unlock() ->
+    io:format("Open~n", []).
+```

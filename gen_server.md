@@ -116,7 +116,7 @@ handle_cast({free, Ch}, Chs) ->
 
 如果**gen_server**是监督树的一部分,那么并不需要停止函数。**gen_server**会被它的supervisor自动终止。supervisor中设置的[关闭策略(shutdown strategy)](supervisor.md)定义了该怎么做。
 
-如果在终止前需要执行清理,关闭策略必须为一个超时值,**gen_server**必须设置成在**init**函数中捕获退出信号。当执行关闭时,**gen_server**会调用回调函数**terminate(shutdown, State)**:
+如果在终止前需要执行清理,关闭策略必须为一个超时值,**gen_server**必须在**init**函数中捕获退出信号。当执行关闭时,**gen_server**会调用回调函数**terminate(shutdown, State)**:
 
 ```
 init(Args) ->
